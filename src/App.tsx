@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { ArrowDownLeft, ArrowUpRight, CalendarDays, List, LogOut, Pencil, Plus, ReceiptText, Trash2, Wallet } from 'lucide-react'
+import { ArrowDownLeft, ArrowUpRight, CalendarDays, Copy, Download, List, LogOut, Pencil, Plus, ReceiptText, Trash2, Wallet } from 'lucide-react'
+import { CategoryBreakdown } from './components/CategoryBreakdown'
 import { Editor, type EditorState } from './components/Editor'
 import { Button } from './components/ui/button'
 import { Card } from './components/ui/card'
-import { categories, dateLabel, deleteTransaction, loadLedger, money, saveBudget, saveTransaction, supabase, today, type Kind } from './data'
+import { categories, dateLabel, deleteTransaction, loadLedger, money, saveBudget, saveCategoryBudget, saveTransaction, supabase, today, type Kind } from './data'
 
 const allCategories = [...categories.expense, ...categories.income]
 
@@ -63,8 +64,10 @@ function Login() {
   </main>
 }
 
-function Dashboard({ session }: { session: Session }) {
+function Dashboard({ session }: { session: Session | null }) {
   const [month, setMonth] = useState(() => today().slice(0, 7))
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState('')
   const [type, setType] = useState<Kind | ''>('')
   const [category, setCategory] = useState('')
   const [editor, setEditor] = useState<EditorState | null>(null)
@@ -83,14 +86,31 @@ function Dashboard({ session }: { session: Session }) {
   const percent = budget === null ? 0 : budget === 0 ? (expense > 0 ? 100 : 0) : Math.min(100, expense / budget * 100)
   const exceeded = budget !== null && expense > budget
 
+  async function exportMonth() {
+    if (!current?.data || exporting) return
+    setExporting(true)
+    setExportError('')
+    try {
+      const { downloadMonthlyExcel } = await import('./exportExcel')
+      await downloadMonthlyExcel(month, rows)
+    } catch {
+      setExportError('Không thể xuất Excel. Vui lòng thử lại.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
   useEffect(() => {
     let active = true
-    loadLedger(month).then(
+    const ledger = import.meta.env.DEV && !session
+      ? import('./localDemo').then(({ loadLocalDemo }) => loadLocalDemo(month))
+      : loadLedger(month)
+    ledger.then(
       data => { if (active) setSnapshot({ key: loadKey, data }) },
       () => { if (active) setSnapshot({ key: loadKey }) },
     )
     return () => { active = false }
-  }, [loadKey, month])
+  }, [loadKey, month, session])
 
   useEffect(() => {
     function refreshOnReturn() {
@@ -107,7 +127,7 @@ function Dashboard({ session }: { session: Session }) {
     <header className="border-b border-slate-200/80 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-8">
         <Brand />
-        <div className="flex min-w-0 items-center gap-2">
+        {session && <div className="flex min-w-0 items-center gap-2">
           <span className="hidden max-w-64 truncate text-sm text-slate-600 sm:block">{session.user.email}</span>
           <Button variant="ghost" onClick={async () => {
             setSignOutError(false)
@@ -116,10 +136,11 @@ function Dashboard({ session }: { session: Session }) {
               if (result?.error) setSignOutError(true)
             } catch { setSignOutError(true) }
           }}><LogOut size={16} /> Đăng xuất</Button>
-        </div>
+        </div>}
       </div>
     </header>
     <main className="mx-auto max-w-6xl px-4 pt-7 pb-24 sm:px-8 sm:pt-10 sm:pb-12">
+      {!session && <p className="mb-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">Dữ liệu mẫu trên localhost. Bạn có thể lọc và xuất Excel.</p>}
       {signOutError && <p role="alert" className="mb-4 text-sm text-red-700">Không thể đăng xuất. Vui lòng thử lại.</p>}
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -133,7 +154,7 @@ function Dashboard({ session }: { session: Session }) {
             <input type="month" min="1900-01" max="9999-12" value={month}
               onChange={event => { if (/^\d{4}-\d{2}$/.test(event.target.value)) setMonth(event.target.value) }} />
           </label>
-          <Button onClick={add} className="fixed right-4 bottom-5 z-30 min-h-12 shadow-lg sm:static sm:min-h-10 sm:shadow-none"><Plus size={18} /> Thêm giao dịch</Button>
+          {session && <Button onClick={add} className="fixed right-4 bottom-5 z-30 min-h-12 shadow-lg sm:static sm:min-h-10 sm:shadow-none"><Plus size={18} /> Thêm giao dịch</Button>}
         </div>
       </div>
 
@@ -166,9 +187,9 @@ function Dashboard({ session }: { session: Session }) {
                 </strong>
               </>}</p>
           </div>
-          <Button variant="outline" disabled={!current?.data} onClick={() => setEditor({ mode: 'budget' })}>
+          {session && <Button variant="outline" disabled={!current?.data} onClick={() => setEditor({ mode: 'budget' })}>
             <Pencil size={15} /> {budget === null ? 'Đặt ngân sách' : 'Sửa ngân sách'}
-          </Button>
+          </Button>}
         </div>
         {budget !== null && <div className="mt-4">
           <div role="progressbar" aria-label="Ngân sách đã sử dụng" aria-valuenow={Math.round(percent)}
@@ -182,13 +203,26 @@ function Dashboard({ session }: { session: Session }) {
         </div>}
       </section>
 
+      {current?.data && <CategoryBreakdown transactions={rows} total={expense} budgets={current.data.categoryBudgets}
+        onFilter={selected => {
+          setType('expense')
+          setCategory(selected)
+          document.getElementById('history-heading')?.focus()
+        }}
+        onEdit={session ? category => setEditor({ mode: 'categoryBudget', category }) : undefined} />}
+
       <section className="panel mt-6" aria-labelledby="history-heading">
         <div className="flex flex-wrap items-center justify-between gap-4 p-4 sm:p-6">
           <div>
-            <h2 id="history-heading" className="flex items-center gap-2 text-xl font-bold tracking-tight"><List size={19} className="text-teal-800" /> Lịch sử giao dịch</h2>
+            <h2 id="history-heading" tabIndex={-1} className="flex items-center gap-2 text-xl font-bold tracking-tight"><List size={19} className="text-teal-800" /> Lịch sử giao dịch</h2>
             {current?.data && <p className="mt-1 text-sm text-slate-600">{visibleRows.length} giao dịch</p>}
+            {exportError && <p role="alert" className="mt-1 text-sm text-red-700">{exportError}</p>}
           </div>
-          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto sm:grid-cols-[auto_auto_auto]">
+            <Button variant="outline" className="col-span-2 sm:col-span-1" disabled={!current?.data || exporting}
+              onClick={() => void exportMonth()}>
+              <Download size={16} /> {exporting ? 'Đang xuất…' : 'Xuất Excel tháng'}
+            </Button>
             <select className="control" aria-label="Lọc theo loại" value={type} onChange={event => {
               setType(event.target.value as Kind | '')
               setCategory('')
@@ -210,7 +244,7 @@ function Dashboard({ session }: { session: Session }) {
             <span className="grid size-12 place-items-center rounded-2xl bg-teal-50 text-teal-800"><ReceiptText size={24} /></span>
             <p className="mt-3 font-bold">{rows.length ? 'Không có kết quả phù hợp' : 'Chưa có giao dịch trong tháng này'}</p>
             {rows.length ? <Button className="mt-2" variant="ghost" onClick={() => { setCategory(''); setType('') }}>Xóa bộ lọc</Button>
-              : <Button className="mt-3" variant="outline" onClick={add}><Plus size={16} /> Thêm giao dịch</Button>}
+              : session && <Button className="mt-3" variant="outline" onClick={add}><Plus size={16} /> Thêm giao dịch</Button>}
           </div>
           : <ul className="divide-y divide-slate-100 border-t border-slate-100">
             {visibleRows.map(row => {
@@ -225,16 +259,19 @@ function Dashboard({ session }: { session: Session }) {
                 <div className={`ml-12 min-w-0 flex-1 break-words text-sm font-bold tabular-nums sm:ml-0 sm:flex-none sm:text-right sm:text-base ${isIncome ? 'text-emerald-800' : 'text-orange-800'}`}>
                   <span className="sr-only">{isIncome ? 'Thu' : 'Chi'}</span>{isIncome ? '+' : '−'}{money(row.amount)}
                 </div>
-                <div className="flex shrink-0 gap-1">
+                {session && <div className="flex shrink-0 gap-1">
+                  <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Nhân bản giao dịch ${row.category}`} title="Nhân bản giao dịch" onClick={() => setEditor({ mode: 'duplicate', transaction: row })}><Copy size={16} /></Button>
                   <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Sửa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'transaction', transaction: row })}><Pencil size={16} /></Button>
                   <Button variant="ghost" className="size-9 min-h-9 p-0 hover:text-red-700" aria-label={`Xóa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'delete', transaction: row })}><Trash2 size={16} /></Button>
-                </div>
+                </div>}
               </li>
             })}
           </ul>}
       </section>
     </main>
-    {editor && <Editor editor={editor} month={month} budget={budget} onClose={() => setEditor(null)}
+    {editor && <Editor editor={editor} month={month}
+      budget={editor.mode === 'categoryBudget' ? current?.data?.categoryBudgets?.[editor.category] ?? null : budget}
+      onClose={() => setEditor(null)}
       onSave={async (draft, id) => {
         await saveTransaction(draft, id)
         setMonth(draft.date.slice(0, 7))
@@ -243,19 +280,23 @@ function Dashboard({ session }: { session: Session }) {
         refresh()
       }}
       onBudget={async amount => { await saveBudget(month, amount); refresh() }}
+      onCategoryBudget={async (category, amount) => { await saveCategoryBudget(month, category, amount); refresh() }}
       onDelete={async id => { await deleteTransaction(id); refresh() }} />}
   </>
 }
 
 export default function App() {
+  const localDemo = import.meta.env.DEV && import.meta.env.VITE_LOCAL_DEMO === 'true' &&
+    ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname)
   const [session, setSession] = useState<Session | null | undefined>(supabase ? undefined : null)
 
   useEffect(() => {
-    if (!supabase) return
+    if (!supabase || localDemo) return
     const { data } = supabase.auth.onAuthStateChange((_event, currentSession) => setSession(currentSession))
     return () => data.subscription.unsubscribe()
-  }, [])
+  }, [localDemo])
 
+  if (localDemo) return <Dashboard session={null} />
   if (session === undefined) return <main className="p-8 text-center" role="status">Đang kiểm tra đăng nhập…</main>
   if (!session) return <Login />
   return <Dashboard key={session.user.id} session={session} />

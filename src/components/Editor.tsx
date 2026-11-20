@@ -2,7 +2,7 @@ import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { AlertDialog } from 'radix-ui'
 import { Button } from './ui/button'
 import { Dialog } from './ui/dialog'
-import { categories, dateLabel, maxAmount, money, today, type Draft, type Kind, type Transaction } from '../data'
+import { categories, dateLabel, maxAmount, money, today, type Draft, type ExpenseCategory, type Kind, type Transaction } from '../data'
 
 const amountFormatter = new Intl.NumberFormat('vi-VN')
 
@@ -25,16 +25,19 @@ function formatAmountInput(event: ChangeEvent<HTMLInputElement>) {
 
 export type EditorState =
   | { mode: 'transaction'; transaction?: Transaction }
+  | { mode: 'duplicate'; transaction: Transaction }
   | { mode: 'budget' }
+  | { mode: 'categoryBudget'; category: ExpenseCategory }
   | { mode: 'delete'; transaction: Transaction }
 
-export function Editor({ editor, month, budget, onClose, onSave, onBudget, onDelete }: {
+export function Editor({ editor, month, budget, onClose, onSave, onBudget, onCategoryBudget, onDelete }: {
   editor: EditorState
   month: string
   budget: number | null
   onClose: () => void
   onSave: (draft: Draft, id?: string) => Promise<void>
   onBudget: (amount: number) => Promise<void>
+  onCategoryBudget: (category: ExpenseCategory, amount: number | null) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
   const transaction = 'transaction' in editor ? editor.transaction : undefined
@@ -79,7 +82,9 @@ export function Editor({ editor, month, budget, onClose, onSave, onBudget, onDel
     )
   }
 
-  const isBudget = editor.mode === 'budget'
+  const categoryBudget = editor.mode === 'categoryBudget' ? editor.category : undefined
+  const isBudget = editor.mode === 'budget' || editor.mode === 'categoryBudget'
+  const duplicate = editor.mode === 'duplicate'
   const initialAmount = isBudget ? budget : transaction?.amount
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -90,17 +95,21 @@ export function Editor({ editor, month, budget, onClose, onSave, onBudget, onDel
       setError('Vui lòng nhập số tiền bằng số nguyên hợp lệ.')
       return
     }
+    if (categoryBudget) {
+      void run(() => onCategoryBudget(categoryBudget, amount))
+      return
+    }
     if (isBudget) {
       void run(() => onBudget(amount))
       return
     }
     const date = String(fields.get('date'))
     const note = String(fields.get('note')).trim()
-    void run(() => onSave({ type, category, amount, date, note }, transaction?.id))
+    void run(() => onSave({ type, category, amount, date, note }, duplicate ? undefined : transaction?.id))
   }
 
   return (
-    <Dialog title={isBudget ? 'Ngân sách tháng' : transaction ? 'Sửa giao dịch' : 'Thêm giao dịch'}
+    <Dialog title={categoryBudget ? `Ngân sách · ${categoryBudget}` : isBudget ? 'Ngân sách tháng' : duplicate ? 'Nhân bản giao dịch' : transaction ? 'Sửa giao dịch' : 'Thêm giao dịch'}
       description={isBudget ? `Đặt hạn mức chi tiêu cho tháng ${month.split('-').reverse().join('/')}.` : 'Nhập thông tin khoản thu hoặc khoản chi.'}
       onClose={onClose} busy={busy}>
       <form onSubmit={submit} className="mt-5 space-y-4">
@@ -132,7 +141,7 @@ export function Editor({ editor, month, budget, onClose, onSave, onBudget, onDel
               </select>
             </label>
             <label className="field">Ngày
-              <input name="date" type="date" required defaultValue={transaction?.date ?? today()} min="1900-01-01" max="9999-12-31" />
+              <input name="date" type="date" required defaultValue={duplicate ? today() : transaction?.date ?? today()} min="1900-01-01" max="9999-12-31" />
             </label>
           </div>
           <label className="field">Ghi chú <span className="sr-only">(tùy chọn)</span>
@@ -141,6 +150,8 @@ export function Editor({ editor, month, budget, onClose, onSave, onBudget, onDel
         </>}
         {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
         <div className="flex justify-end gap-2 pt-2">
+          {categoryBudget && budget !== null && <Button variant="ghost" className="mr-auto text-red-700" disabled={busy}
+            onClick={() => void run(() => onCategoryBudget(categoryBudget, null))}>Bỏ hạn mức</Button>}
           <Button variant="outline" disabled={busy} onClick={onClose}>Hủy</Button>
           <Button type="submit" disabled={busy}>{busy ? 'Đang lưu…' : 'Lưu'}</Button>
         </div>

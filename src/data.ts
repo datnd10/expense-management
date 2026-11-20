@@ -6,6 +6,8 @@ export const categories = {
 } as const
 
 export type Kind = keyof typeof categories
+export type ExpenseCategory = (typeof categories.expense)[number]
+export type CategoryBudgets = Partial<Record<ExpenseCategory, number>>
 export type Draft = { type: Kind; category: string; amount: number; date: string; note: string }
 export type Transaction = Draft & { id: string; created_at: string }
 
@@ -20,7 +22,7 @@ const url = import.meta.env.VITE_SUPABASE_URL
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 export const supabase = url && key ? createClient(url, key) : null
 
-type Ledger = { transactions: Transaction[]; budget: number | null }
+type Ledger = { transactions: Transaction[]; budget: number | null; categoryBudgets: CategoryBudgets | null }
 function requireSupabase() {
   if (!supabase) throw new Error('Chưa kết nối Supabase.')
   return supabase
@@ -49,12 +51,18 @@ export async function loadLedger(month: string): Promise<Ledger> {
     }
   }
 
-  const [transactions, budget] = await Promise.all([
+  const [transactions, budget, limits] = await Promise.all([
     transactionsForMonth(),
     client.from('budgets').select('amount').eq('month', start).maybeSingle(),
+    client.from('category_budgets').select('category, amount').eq('month', start),
   ])
   if (budget.error) throw budget.error
-  return { transactions, budget: budget.data?.amount ?? null }
+  if (limits.error && !['PGRST205', '42P01'].includes(limits.error.code)) throw limits.error
+  return {
+    transactions,
+    budget: budget.data?.amount ?? null,
+    categoryBudgets: limits.data ? Object.fromEntries(limits.data.map(row => [row.category, row.amount])) : null,
+  }
 }
 
 export async function saveTransaction(draft: Draft, id?: string) {
@@ -72,5 +80,14 @@ export async function deleteTransaction(id: string) {
 
 export async function saveBudget(month: string, amount: number) {
   const { error } = await requireSupabase().from('budgets').upsert({ month: month + '-01', amount }, { onConflict: 'user_id,month' })
+  if (error) throw error
+}
+
+export async function saveCategoryBudget(month: string, category: ExpenseCategory, amount: number | null) {
+  const budgets = requireSupabase().from('category_budgets')
+  const date = month + '-01'
+  const { error } = amount === null
+    ? await budgets.delete().eq('month', date).eq('category', category)
+    : await budgets.upsert({ month: date, category, amount }, { onConflict: 'user_id,month,category' })
   if (error) throw error
 }
