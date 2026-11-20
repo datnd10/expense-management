@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { Fragment, useEffect, useState, type FormEvent } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { ArrowDownLeft, ArrowUpRight, CalendarDays, Copy, Download, List, LogOut, Pencil, Plus, ReceiptText, Trash2, Wallet } from 'lucide-react'
 import { CategoryBreakdown } from './components/CategoryBreakdown'
@@ -247,24 +247,32 @@ function Dashboard({ session }: { session: Session | null }) {
               : session && <Button className="mt-3" variant="outline" onClick={add}><Plus size={16} /> Thêm giao dịch</Button>}
           </div>
           : <ul className="divide-y divide-slate-100 border-t border-slate-100">
-            {visibleRows.map(row => {
+            {visibleRows.map((row, index) => {
               const isIncome = row.type === 'income'
               const Icon = isIncome ? ArrowDownLeft : ArrowUpRight
-              return <li key={row.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3.5 sm:flex-nowrap sm:px-6">
-                <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${isIncome ? 'bg-emerald-50 text-emerald-800' : 'bg-orange-50 text-orange-800'}`}><Icon size={18} /></span>
-                <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] sm:basis-auto">
-                  <div className="font-semibold">{row.category}</div>
-                  <div className="break-words text-sm text-slate-600">{dateLabel(row.date)}{row.note ? ` · ${row.note}` : ''}</div>
-                </div>
-                <div className={`ml-12 min-w-0 flex-1 break-words text-sm font-bold tabular-nums sm:ml-0 sm:flex-none sm:text-right sm:text-base ${isIncome ? 'text-emerald-800' : 'text-orange-800'}`}>
-                  <span className="sr-only">{isIncome ? 'Thu' : 'Chi'}</span>{isIncome ? '+' : '−'}{money(row.amount)}
-                </div>
-                {session && <div className="flex shrink-0 gap-1">
-                  <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Nhân bản giao dịch ${row.category}`} title="Nhân bản giao dịch" onClick={() => setEditor({ mode: 'duplicate', transaction: row })}><Copy size={16} /></Button>
-                  <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Sửa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'transaction', transaction: row })}><Pencil size={16} /></Button>
-                  <Button variant="ghost" className="size-9 min-h-9 p-0 hover:text-red-700" aria-label={`Xóa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'delete', transaction: row })}><Trash2 size={16} /></Button>
-                </div>}
-              </li>
+              return <Fragment key={row.id}>
+                {row.date !== visibleRows[index - 1]?.date && <li className="border-t border-slate-200 bg-slate-50 px-3.5 py-2 sm:px-6">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold tabular-nums text-slate-700">
+                    <CalendarDays size={15} aria-hidden="true" />
+                    <time dateTime={row.date}>{dateLabel(row.date)}</time>
+                  </h3>
+                </li>}
+                <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3.5 py-3.5 sm:flex-nowrap sm:px-6">
+                  <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${isIncome ? 'bg-emerald-50 text-emerald-800' : 'bg-orange-50 text-orange-800'}`}><Icon size={18} /></span>
+                  <div className="min-w-0 flex-1 basis-[calc(100%-3rem)] sm:basis-auto">
+                    <div className="font-semibold">{row.category}</div>
+                    <div className="break-words text-sm text-slate-600">{dateLabel(row.date)}{row.note ? ` · ${row.note}` : ''}</div>
+                  </div>
+                  <div className={`ml-12 min-w-0 flex-1 break-words text-sm font-bold tabular-nums sm:ml-0 sm:flex-none sm:text-right sm:text-base ${isIncome ? 'text-emerald-800' : 'text-orange-800'}`}>
+                    <span className="sr-only">{isIncome ? 'Thu' : 'Chi'}</span>{isIncome ? '+' : '−'}{money(row.amount)}
+                  </div>
+                  {session && <div className="flex shrink-0 gap-1">
+                    <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Nhân bản giao dịch ${row.category}`} title="Nhân bản giao dịch" onClick={() => setEditor({ mode: 'duplicate', transaction: row })}><Copy size={16} /></Button>
+                    <Button variant="ghost" className="size-9 min-h-9 p-0" aria-label={`Sửa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'transaction', transaction: row })}><Pencil size={16} /></Button>
+                    <Button variant="ghost" className="size-9 min-h-9 p-0 hover:text-red-700" aria-label={`Xóa giao dịch ${row.category}`} onClick={() => setEditor({ mode: 'delete', transaction: row })}><Trash2 size={16} /></Button>
+                  </div>}
+                </li>
+              </Fragment>
             })}
           </ul>}
       </section>
