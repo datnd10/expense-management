@@ -45,7 +45,7 @@ function Login() {
       <h1 className="mt-8 text-2xl font-extrabold tracking-tight">Đăng nhập</h1>
       <p className="mt-1 text-slate-600">Xem và cập nhật sổ thu chi trên các thiết bị của bạn.</p>
       {!supabase && <p role="status" className="mt-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
-        Chưa kết nối Supabase. Điền URL và Publishable Key vào <code>.env.local</code>, rồi khởi động lại website để đăng nhập.
+        Chưa kết nối Supabase. Kiểm tra URL và Publishable Key trong cấu hình dự án, rồi chạy lại bản build hoặc khởi động lại máy chủ phát triển.
       </p>}
       <form onSubmit={submit} className="mt-6 space-y-4">
         <fieldset disabled={!supabase || busy} className="space-y-4 disabled:opacity-60">
